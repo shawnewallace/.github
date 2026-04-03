@@ -38,8 +38,8 @@ jobs:
           echo "Stale after: ${STALE_DAYS} days (cutoff: $CUTOFF)"
           echo "Dry run:   $DRY_RUN"
 
-          # Build combined skip list from hardcoded + runtime input
-          SKIP_LIST=($ALWAYS_SKIP)
+          # Build combined skip list from hardcoded + runtime input (comma or space separated)
+          IFS=', ' read -ra SKIP_LIST <<< "$ALWAYS_SKIP"
           if [[ -n "$SKIP_INPUT" ]]; then
             IFS=',' read -ra EXTRA <<< "$SKIP_INPUT"
             for r in "${EXTRA[@]}"; do
