@@ -29,7 +29,7 @@ jobs:
           OWNER: shawnewallace
           STALE_DAYS: 180
           # Repos to always skip regardless of trigger (space-separated)
-          ALWAYS_SKIP: ".github"
+          ALWAYS_SKIP: ".github,eda-cloudnative,eda-rabbitmq,spine,MyTime,Tools"
           # Additional repos supplied at runtime via workflow_dispatch input
           SKIP_INPUT: ${{ inputs.skip_repos }}
         run: |
