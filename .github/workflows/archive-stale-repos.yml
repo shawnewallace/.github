@@ -9,6 +9,10 @@ on:
         description: 'Dry run — list stale repos without archiving'
         type: boolean
         default: true
+      skip_repos:
+        description: 'Comma-separated list of repo names to skip (e.g. my-repo,another-repo)'
+        type: string
+        default: ''
 
 jobs:
   archive-stale-repos:
@@ -24,18 +28,41 @@ jobs:
           DRY_RUN: ${{ github.event_name == 'schedule' && 'true' || inputs.dry_run }}
           OWNER: shawnewallace
           STALE_DAYS: 180
+          # Repos to always skip regardless of trigger (space-separated)
+          ALWAYS_SKIP: ".github"
+          # Additional repos supplied at runtime via workflow_dispatch input
+          SKIP_INPUT: ${{ inputs.skip_repos }}
         run: |
           CUTOFF=$(date -d "-${STALE_DAYS} days" +%Y-%m-%dT%H:%M:%SZ)
           echo "Owner:     $OWNER"
           echo "Stale after: ${STALE_DAYS} days (cutoff: $CUTOFF)"
           echo "Dry run:   $DRY_RUN"
+
+          # Build combined skip list from hardcoded + runtime input
+          SKIP_LIST=($ALWAYS_SKIP)
+          if [[ -n "$SKIP_INPUT" ]]; then
+            IFS=',' read -ra EXTRA <<< "$SKIP_INPUT"
+            for r in "${EXTRA[@]}"; do
+              SKIP_LIST+=("$(echo "$r" | xargs)")  # trim whitespace
+            done
+          fi
+          echo "Skipping:  ${SKIP_LIST[*]:-none}"
           echo "----------------------------------------"
+
+          is_skipped() {
+            local name="$1"
+            for skip in "${SKIP_LIST[@]}"; do
+              [[ "$name" == "$skip" ]] && return 0
+            done
+            return 1
+          }
 
           STALE_NAMES=()
           STALE_DATES=()
 
           while IFS='|' read -r name pushed_at; do
             [[ -z "$name" ]] && continue
+            is_skipped "$name" && continue
             if [[ "$pushed_at" < "$CUTOFF" ]]; then
               STALE_NAMES+=("$name")
               STALE_DATES+=("$pushed_at")
