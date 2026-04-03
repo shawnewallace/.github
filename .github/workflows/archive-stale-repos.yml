@@ -1,0 +1,69 @@
+name: Archive Stale Repositories
+
+on:
+  schedule:
+    - cron: '0 9 1 * *'  # Monthly on the 1st at 9am UTC (dry run — review only)
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Dry run — list stale repos without archiving'
+        type: boolean
+        default: true
+
+jobs:
+  archive-stale-repos:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Find and archive stale repositories
+        env:
+          GH_TOKEN: ${{ secrets.REPO_MANAGEMENT_TOKEN }}
+          # Scheduled runs are always dry-run (monthly report); manual runs respect the input
+          DRY_RUN: ${{ github.event_name == 'schedule' && 'true' || inputs.dry_run }}
+          OWNER: shawnewallace
+          STALE_DAYS: 180
+        run: |
+          CUTOFF=$(date -d "-${STALE_DAYS} days" +%Y-%m-%dT%H:%M:%SZ)
+          echo "Owner:     $OWNER"
+          echo "Stale after: ${STALE_DAYS} days (cutoff: $CUTOFF)"
+          echo "Dry run:   $DRY_RUN"
+          echo "----------------------------------------"
+
+          STALE_NAMES=()
+          STALE_DATES=()
+
+          while IFS='|' read -r name pushed_at; do
+            [[ -z "$name" ]] && continue
+            if [[ "$pushed_at" < "$CUTOFF" ]]; then
+              STALE_NAMES+=("$name")
+              STALE_DATES+=("$pushed_at")
+            fi
+          done < <(gh api "users/${OWNER}/repos" --paginate \
+            --jq '.[] | select(.fork == false and .archived == false) | "\(.name)|\(.pushed_at)"')
+
+          echo ""
+          echo "=== Stale repositories (no push in ${STALE_DAYS}+ days) ==="
+
+          if [ ${#STALE_NAMES[@]} -eq 0 ]; then
+            echo "None found."
+          else
+            for i in "${!STALE_NAMES[@]}"; do
+              echo "  - ${STALE_NAMES[$i]}  (last push: ${STALE_DATES[$i]})"
+            done
+          fi
+
+          echo ""
+
+          if [ "$DRY_RUN" = "true" ]; then
+            echo "Dry run complete — no repos were archived."
+            echo "To archive these repos, trigger this workflow manually with dry_run=false."
+          else
+            echo "Archiving ${#STALE_NAMES[@]} repo(s)..."
+            for name in "${STALE_NAMES[@]}"; do
+              echo "  Archiving: $name"
+              gh api --method PATCH "repos/${OWNER}/${name}" -f archived=true
+            done
+            echo "Done."
+          fi
